@@ -1,4 +1,6 @@
 import type { Prediction } from "./walrus";
+import type { WorldCupData } from "./scoreUpdate";
+import { formatTeamName, formatResult, getWinner } from "./scoreUpdate";
 
 export interface ActiveMatch {
   id: string;
@@ -6,6 +8,7 @@ export interface ActiveMatch {
   teamB: string;
   stage: string;
   date: string;
+  isLive?: boolean;
 }
 
 export interface PastMatch {
@@ -18,7 +21,9 @@ export interface PastMatch {
   winner: string;
 }
 
-export const ACTIVE_MATCH: ActiveMatch = {
+// ─── Hardcoded fallback data ────────────────────────────────────────────────
+
+export const FALLBACK_ACTIVE_MATCH: ActiveMatch = {
   id: "m1",
   teamA: "🇦🇷 Argentina",
   teamB: "🇧🇷 Brazil",
@@ -26,7 +31,7 @@ export const ACTIVE_MATCH: ActiveMatch = {
   date: "June 26, 2026",
 };
 
-export const PAST_MATCHES: PastMatch[] = [
+export const FALLBACK_PAST_MATCHES: PastMatch[] = [
   {
     id: "m0",
     teamA: "🇩🇪 Germany",
@@ -46,6 +51,47 @@ export const PAST_MATCHES: PastMatch[] = [
     date: "June 22, 2026",
   },
 ];
+
+// ─── Live data mapper ────────────────────────────────────────────────────────
+
+export function mapWorldCupData(data: WorldCupData): {
+  activeMatch: ActiveMatch;
+  pastMatches: PastMatch[];
+} {
+  const finished: PastMatch[] = data.matches
+    .filter((m) => m.match_state === "finished")
+    .map((m, i) => ({
+      id: `live_past_${i}`,
+      teamA: formatTeamName(m.team1),
+      teamB: formatTeamName(m.team2),
+      stage: m.group,
+      date: m.status,
+      result: formatResult(m),
+      winner: getWinner(m),
+    }));
+
+  // Prefer a live match, otherwise take the first upcoming match
+  const liveMatch = data.matches.find((m) => m.match_state === "live");
+  const upcomingMatch = data.matches.find((m) => m.match_state === "upcoming");
+  const activeRaw = liveMatch ?? upcomingMatch ?? null;
+
+  const activeMatch: ActiveMatch = activeRaw
+    ? {
+        id: `live_active_${activeRaw.team1}_${activeRaw.team2}`,
+        teamA: formatTeamName(activeRaw.team1),
+        teamB: formatTeamName(activeRaw.team2),
+        stage: activeRaw.group,
+        date: activeRaw.status,
+        isLive: activeRaw.match_state === "live",
+      }
+    : FALLBACK_ACTIVE_MATCH;
+
+  const pastMatches = finished.length > 0 ? finished : FALLBACK_PAST_MATCHES;
+
+  return { activeMatch, pastMatches };
+}
+
+// ─── Seeded predictions for fallback past matches ────────────────────────────
 
 export const SEED_PREDICTIONS: Prediction[] = [
   // Germany vs France (m0) — France won
@@ -105,7 +151,6 @@ export const SEED_PREDICTIONS: Prediction[] = [
     timestamp: 1750389600000,
     storedOnWalrus: false,
   },
-
   // Spain vs Portugal (p0) — Spain won
   {
     matchId: "p0",
@@ -143,7 +188,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0x6d4e8f1c3a027b59",
     teamPicked: "🇪🇸 Spain",
-    reason: "Spain always performs in Iberican derbies. Mental edge is theirs.",
+    reason: "Spain always performs in Iberian derbies. Mental edge is theirs.",
     timestamp: 1750555200000,
     storedOnWalrus: false,
   },
@@ -165,12 +210,18 @@ export const SEED_PREDICTIONS: Prediction[] = [
   },
 ];
 
-export function getPredictionsForMatch(matchId: string, allPredictions: Prediction[]): Prediction[] {
-  return allPredictions.filter((p) => p.matchId === matchId);
+// ─── Utility functions ───────────────────────────────────────────────────────
+
+export function getPredictionsForMatch(matchId: string, all: Prediction[]): Prediction[] {
+  return all.filter((p) => p.matchId === matchId);
 }
 
-export function getVoteSplit(matchId: string, teamA: string, allPredictions: Prediction[]): { aPercent: number; bPercent: number; total: number } {
-  const preds = getPredictionsForMatch(matchId, allPredictions);
+export function getVoteSplit(
+  matchId: string,
+  teamA: string,
+  all: Prediction[]
+): { aPercent: number; bPercent: number; total: number } {
+  const preds = getPredictionsForMatch(matchId, all);
   const total = preds.length;
   if (total === 0) return { aPercent: 50, bPercent: 50, total: 0 };
   const aVotes = preds.filter((p) => p.teamPicked === teamA).length;
@@ -180,12 +231,16 @@ export function getVoteSplit(matchId: string, teamA: string, allPredictions: Pre
 
 export function getCommunityAccuracy(
   pastMatch: PastMatch,
-  allPredictions: Prediction[]
+  all: Prediction[]
 ): { wasRight: boolean; winnerPercent: number; loserPercent: number } {
-  const { aPercent } = getVoteSplit(pastMatch.id, pastMatch.teamA, allPredictions);
+  const { aPercent } = getVoteSplit(pastMatch.id, pastMatch.teamA, all);
   const bPercent = 100 - aPercent;
-  const winnerIsA = pastMatch.winner === pastMatch.teamA || pastMatch.teamA.includes(pastMatch.winner);
+  const winnerIsA =
+    pastMatch.teamA.includes(pastMatch.winner) || pastMatch.winner === pastMatch.teamA;
   const winnerPercent = winnerIsA ? aPercent : bPercent;
-  const loserPercent = 100 - winnerPercent;
-  return { wasRight: winnerPercent > 50, winnerPercent, loserPercent };
+  return {
+    wasRight: winnerPercent > 50,
+    winnerPercent,
+    loserPercent: 100 - winnerPercent,
+  };
 }
