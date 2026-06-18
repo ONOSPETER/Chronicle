@@ -9,6 +9,8 @@ export interface ActiveMatch {
   stage: string;
   date: string;
   isLive?: boolean;
+  scoreA?: number | null;
+  scoreB?: number | null;
 }
 
 export interface PastMatch {
@@ -21,15 +23,17 @@ export interface PastMatch {
   winner: string;
 }
 
-// ─── Hardcoded fallback data ────────────────────────────────────────────────
+// ─── Hardcoded fallback data ──────────────────────────────────────────────────
 
-export const FALLBACK_ACTIVE_MATCH: ActiveMatch = {
-  id: "m1",
-  teamA: "🇦🇷 Argentina",
-  teamB: "🇧🇷 Brazil",
-  stage: "Group C",
-  date: "June 26, 2026",
-};
+export const FALLBACK_ACTIVE_MATCHES: ActiveMatch[] = [
+  {
+    id: "m1",
+    teamA: "🇦🇷 Argentina",
+    teamB: "🇧🇷 Brazil",
+    stage: "Group C",
+    date: "June 26, 2026",
+  },
+];
 
 export const FALLBACK_PAST_MATCHES: PastMatch[] = [
   {
@@ -52,16 +56,16 @@ export const FALLBACK_PAST_MATCHES: PastMatch[] = [
   },
 ];
 
-// ─── Live data mapper ────────────────────────────────────────────────────────
+// ─── Live data mapper ─────────────────────────────────────────────────────────
 
 export function mapWorldCupData(data: WorldCupData): {
-  activeMatch: ActiveMatch;
+  activeMatches: ActiveMatch[];
   pastMatches: PastMatch[];
 } {
   const finished: PastMatch[] = data.matches
     .filter((m) => m.match_state === "finished")
     .map((m, i) => ({
-      id: `live_past_${i}`,
+      id: `live_past_${i}_${m.team1}_${m.team2}`,
       teamA: formatTeamName(m.team1),
       teamB: formatTeamName(m.team2),
       stage: m.group,
@@ -70,28 +74,42 @@ export function mapWorldCupData(data: WorldCupData): {
       winner: getWinner(m),
     }));
 
-  // Prefer a live match, otherwise take the first upcoming match
-  const liveMatch = data.matches.find((m) => m.match_state === "live");
-  const upcomingMatch = data.matches.find((m) => m.match_state === "upcoming");
-  const activeRaw = liveMatch ?? upcomingMatch ?? null;
+  const activeLive: ActiveMatch[] = data.matches
+    .filter((m) => m.match_state === "live")
+    .map((m, i) => ({
+      id: `live_active_${i}_${m.team1}_${m.team2}`,
+      teamA: formatTeamName(m.team1),
+      teamB: formatTeamName(m.team2),
+      stage: m.group,
+      date: m.status,
+      isLive: true,
+      scoreA: m.score1,
+      scoreB: m.score2,
+    }));
 
-  const activeMatch: ActiveMatch = activeRaw
-    ? {
-        id: `live_active_${activeRaw.team1}_${activeRaw.team2}`,
-        teamA: formatTeamName(activeRaw.team1),
-        teamB: formatTeamName(activeRaw.team2),
-        stage: activeRaw.group,
-        date: activeRaw.status,
-        isLive: activeRaw.match_state === "live",
-      }
-    : FALLBACK_ACTIVE_MATCH;
+  const activeUpcoming: ActiveMatch[] = data.matches
+    .filter((m) => m.match_state === "upcoming")
+    .map((m, i) => ({
+      id: `upcoming_${i}_${m.team1}_${m.team2}`,
+      teamA: formatTeamName(m.team1),
+      teamB: formatTeamName(m.team2),
+      stage: m.group,
+      date: m.status,
+      isLive: false,
+      scoreA: null,
+      scoreB: null,
+    }));
 
-  const pastMatches = finished.length > 0 ? finished : FALLBACK_PAST_MATCHES;
+  // Live matches first, then upcoming
+  const activeMatches = [...activeLive, ...activeUpcoming];
 
-  return { activeMatch, pastMatches };
+  return {
+    activeMatches: activeMatches.length > 0 ? activeMatches : FALLBACK_ACTIVE_MATCHES,
+    pastMatches: finished.length > 0 ? finished : FALLBACK_PAST_MATCHES,
+  };
 }
 
-// ─── Seeded predictions for fallback past matches ────────────────────────────
+// ─── Seeded predictions for fallback past matches ─────────────────────────────
 
 export const SEED_PREDICTIONS: Prediction[] = [
   // Germany vs France (m0) — France won
@@ -99,7 +117,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "m0",
     walletAddress: "0x3f9a82b1c4d72e56",
     teamPicked: "🇫🇷 France",
-    reason: "France's midfield is simply on another level. Mbappé will be unstoppable.",
+    reason: "France's midfield is on another level. Mbappé will be unstoppable.",
     timestamp: 1750368000000,
     storedOnWalrus: false,
   },
@@ -115,7 +133,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "m0",
     walletAddress: "0xa4b63c29d18e57f0",
     teamPicked: "🇫🇷 France",
-    reason: "Pogba's return gives them depth no other team can match in midfield.",
+    reason: "Pogba's return gives them depth no other team can match.",
     timestamp: 1750375200000,
     storedOnWalrus: false,
   },
@@ -139,7 +157,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "m0",
     walletAddress: "0xd2c1b4a7e39f6058",
     teamPicked: "🇩🇪 Germany",
-    reason: "Home pressure aside, Germany know how to win when it counts.",
+    reason: "Germany know how to win when it counts.",
     timestamp: 1750386000000,
     storedOnWalrus: false,
   },
@@ -147,7 +165,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "m0",
     walletAddress: "0xf7e8c3b5a2d16094",
     teamPicked: "🇫🇷 France",
-    reason: "Les Bleus' tactical flexibility gives them the edge in a close match.",
+    reason: "Les Bleus' tactical flexibility gives them the edge.",
     timestamp: 1750389600000,
     storedOnWalrus: false,
   },
@@ -156,7 +174,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0x2b7f4a9c1e63d805",
     teamPicked: "🇪🇸 Spain",
-    reason: "Spain's tiki-taka has evolved. Their press is relentless this cycle.",
+    reason: "Spain's tiki-taka has evolved. Their press is relentless.",
     timestamp: 1750540800000,
     storedOnWalrus: false,
   },
@@ -164,7 +182,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0x5c8d2e1b7f043a96",
     teamPicked: "🇵🇹 Portugal",
-    reason: "Ronaldo declared this his last World Cup. He'll carry Portugal far.",
+    reason: "Ronaldo declared this his last World Cup. He'll carry Portugal.",
     timestamp: 1750544400000,
     storedOnWalrus: false,
   },
@@ -172,7 +190,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0x9a1f6d4c28b7e305",
     teamPicked: "🇪🇸 Spain",
-    reason: "Pedri and Gavi control the tempo. Portugal can't keep up with their pace.",
+    reason: "Pedri and Gavi control tempo. Portugal can't keep up.",
     timestamp: 1750548000000,
     storedOnWalrus: false,
   },
@@ -180,7 +198,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0xe3b2c7a041d9f568",
     teamPicked: "🇵🇹 Portugal",
-    reason: "Bruno Fernandes in top form. Portugal's attack is more direct and dangerous.",
+    reason: "Bruno Fernandes in top form. Portugal's attack is direct and dangerous.",
     timestamp: 1750551600000,
     storedOnWalrus: false,
   },
@@ -188,7 +206,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0x6d4e8f1c3a027b59",
     teamPicked: "🇪🇸 Spain",
-    reason: "Spain always performs in Iberian derbies. Mental edge is theirs.",
+    reason: "Spain always performs in Iberian derbies.",
     timestamp: 1750555200000,
     storedOnWalrus: false,
   },
@@ -196,7 +214,7 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0xb0a5c6f9d2e31847",
     teamPicked: "🇵🇹 Portugal",
-    reason: "Diogo Jota's movement will expose Spain's high defensive line repeatedly.",
+    reason: "Diogo Jota's movement will expose Spain's high defensive line.",
     timestamp: 1750558800000,
     storedOnWalrus: false,
   },
@@ -204,13 +222,13 @@ export const SEED_PREDICTIONS: Prediction[] = [
     matchId: "p0",
     walletAddress: "0x4f2c0d8e6b9a1735",
     teamPicked: "🇪🇸 Spain",
-    reason: "Yamal will be the difference maker. At 18, he's already world class.",
+    reason: "Yamal will be the difference maker. At 18, already world class.",
     timestamp: 1750562400000,
     storedOnWalrus: false,
   },
 ];
 
-// ─── Utility functions ───────────────────────────────────────────────────────
+// ─── Utility helpers ──────────────────────────────────────────────────────────
 
 export function getPredictionsForMatch(matchId: string, all: Prediction[]): Prediction[] {
   return all.filter((p) => p.matchId === matchId);

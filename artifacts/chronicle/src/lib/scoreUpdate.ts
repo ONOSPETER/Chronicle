@@ -1,7 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
 const CACHE_KEY = "chronicle_worldcup_data";
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const DAILY_CHECK_KEY = "chronicle_daily_check";
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface WorldCupMatch {
   status: string;
@@ -25,6 +26,26 @@ interface CachedData {
   fetchedAt: number;
 }
 
+// ─── Daily check helpers ──────────────────────────────────────────────────────
+
+function getTodayString(): string {
+  return new Date().toISOString().split("T")[0]; // "2026-06-18"
+}
+
+export function hasDailyCheck(): boolean {
+  return localStorage.getItem(DAILY_CHECK_KEY) === getTodayString();
+}
+
+export function getDailyCheckDate(): string | null {
+  return localStorage.getItem(DAILY_CHECK_KEY);
+}
+
+function setDailyCheck(): void {
+  localStorage.setItem(DAILY_CHECK_KEY, getTodayString());
+}
+
+// ─── Cache helpers ────────────────────────────────────────────────────────────
+
 function loadCached(): WorldCupData | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
@@ -43,7 +64,7 @@ function saveCache(data: WorldCupData): void {
     const cached: CachedData = { data, fetchedAt: Date.now() };
     localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
   } catch {
-    // localStorage quota exceeded or unavailable — ignore
+    // localStorage quota exceeded — ignore
   }
 }
 
@@ -60,15 +81,23 @@ export function getCacheAge(): number | null {
 
 export function clearCache(): void {
   localStorage.removeItem(CACHE_KEY);
+  localStorage.removeItem(DAILY_CHECK_KEY);
 }
 
+// ─── Main fetch ───────────────────────────────────────────────────────────────
+
 /**
- * Fetch live World Cup data from Gemini with Google Search grounding.
- * Results are cached for 12 hours in localStorage.
- * Returns null if the API call fails.
+ * Fetch World Cup data from Gemini with Google Search grounding.
+ * - Runs once per calendar day; subsequent calls use the 24-hour cache.
+ * - Pass forceRefresh=true to bypass both the daily check and the cache.
  */
 export async function fetchWorldCupData(forceRefresh = false): Promise<WorldCupData | null> {
+  // Use cache if: not forced AND (daily check already done OR cache still fresh)
   if (!forceRefresh) {
+    if (hasDailyCheck()) {
+      const cached = loadCached();
+      if (cached) return cached;
+    }
     const cached = loadCached();
     if (cached) return cached;
   }
@@ -79,38 +108,48 @@ export async function fetchWorldCupData(forceRefresh = false): Promise<WorldCupD
     return null;
   }
 
+  const today = getTodayString(); // e.g. "2026-06-18"
+
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    // NOTE: googleSearch grounding and responseMimeType:"application/json" are mutually
-    // exclusive in the Gemini API. We use grounding for real-time data and ask Gemini
-    // to return a JSON block in its text, which we extract and parse ourselves.
+    // NOTE: googleSearch + responseMimeType:"application/json" are mutually exclusive.
+    // We ask Gemini to output raw JSON and parse it ourselves.
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Search Google for the latest FIFA World Cup 2026 match scores, live matches, and upcoming fixtures.
+      contents: `Today's date is ${today}.
 
-Return ONLY a valid JSON object (no markdown fences, no extra text) with this exact shape:
+Search Google for the FIFA World Cup 2026 match schedule and results.
+
+I need ALL of the following:
+1. Every match that has ALREADY been played (with final scores)
+2. Every match that is currently LIVE (with current scores)
+3. Every match scheduled for TODAY (${today}) that has not started yet
+4. Every UPCOMING match scheduled for the next 7 days
+
+Return ONLY a valid raw JSON object with NO markdown fences and NO extra text:
 {
-  "timestamp": "<ISO date string of when this data was retrieved>",
-  "total_matches": <integer>,
+  "timestamp": "${today}T<current UTC time>",
+  "total_matches": <integer — total count in the array>,
   "matches": [
     {
-      "status": "<e.g. 'FT', '74\\' (Live)', or kickoff date like 'Jun 26'>",
+      "status": "<one of: 'FT' for finished | 'LIVE' | a kickoff time/date string for upcoming>",
       "match_state": "<EXACTLY one of: finished | live | upcoming>",
-      "group": "<e.g. 'Group A' or 'Round of 16'>",
-      "team1": "<country name only, no emoji>",
-      "score1": <integer or null if upcoming>,
-      "team2": "<country name only, no emoji>",
-      "score2": <integer or null if upcoming>
+      "group": "<stage name, e.g. 'Group A', 'Round of 16'>",
+      "team1": "<plain country name, no emoji, e.g. Argentina>",
+      "score1": <integer goals or null if upcoming>,
+      "team2": "<plain country name, no emoji>",
+      "score2": <integer goals or null if upcoming>
     }
   ]
 }
 
-Rules:
-- match_state must be exactly "finished", "live", or "upcoming"
-- score1/score2 must be null for upcoming matches
-- team names should be plain country names (e.g. "Argentina", "France")
-- Include ALL matches you can find: finished, live, and upcoming`,
+Critical rules:
+- match_state must be EXACTLY "finished", "live", or "upcoming" (lowercase, no other values)
+- score1 and score2 MUST be null for upcoming matches
+- team names must be plain country names (no emoji, no abbreviations)
+- Do NOT omit any matches — include every game you find
+- Sort: live first, then today's upcoming, then other upcoming, then finished (newest first)`,
       config: {
         tools: [{ googleSearch: {} }],
       },
@@ -119,18 +158,35 @@ Rules:
     const text = response.text;
     if (!text) throw new Error("Empty response from Gemini");
 
-    // Strip markdown fences if Gemini wraps the JSON despite instructions
+    // Strip markdown fences if Gemini adds them despite instructions
     const jsonText = text
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/i, "")
+      .replace(/^```(?:json)?\s*/im, "")
+      .replace(/\s*```\s*$/im, "")
       .trim();
 
     const parsed: WorldCupData = JSON.parse(jsonText);
     parsed.fetchedAt = Date.now();
+
+    // Normalise match_state values (sometimes Gemini returns "FT" etc.)
+    parsed.matches = parsed.matches.map((m) => {
+      let state = m.match_state?.toLowerCase?.() as WorldCupMatch["match_state"];
+      if (!["finished", "live", "upcoming"].includes(state)) {
+        // Infer from status string
+        const s = (m.status ?? "").toUpperCase();
+        if (s === "FT" || s === "AET" || s === "PEN") state = "finished";
+        else if (s.includes("LIVE") || s.includes("'")) state = "live";
+        else state = "upcoming";
+      }
+      return { ...m, match_state: state };
+    });
+
+    parsed.total_matches = parsed.matches.length;
+
     saveCache(parsed);
+    setDailyCheck();
 
     console.log(
-      `[Chronicle] Fetched ${parsed.total_matches} World Cup matches from Gemini at ${parsed.timestamp}`
+      `[Chronicle] Fetched ${parsed.total_matches} matches for ${today} (timestamp: ${parsed.timestamp})`
     );
     return parsed;
   } catch (err) {
@@ -139,97 +195,158 @@ Rules:
   }
 }
 
-// Country flag emoji map — Gemini returns plain country names, we map them to flag + name
+// ─── Country flag map ─────────────────────────────────────────────────────────
+
 const FLAG_MAP: Record<string, string> = {
-  "Argentina": "🇦🇷",
-  "Brazil": "🇧🇷",
-  "France": "🇫🇷",
-  "Germany": "🇩🇪",
-  "Spain": "🇪🇸",
-  "Portugal": "🇵🇹",
-  "England": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-  "Netherlands": "🇳🇱",
-  "Belgium": "🇧🇪",
-  "Italy": "🇮🇹",
-  "Croatia": "🇭🇷",
-  "Morocco": "🇲🇦",
-  "USA": "🇺🇸",
+  Argentina: "🇦🇷",
+  Brazil: "🇧🇷",
+  France: "🇫🇷",
+  Germany: "🇩🇪",
+  Spain: "🇪🇸",
+  Portugal: "🇵🇹",
+  England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+  Netherlands: "🇳🇱",
+  Belgium: "🇧🇪",
+  Italy: "🇮🇹",
+  Croatia: "🇭🇷",
+  Morocco: "🇲🇦",
+  USA: "🇺🇸",
   "United States": "🇺🇸",
-  "Mexico": "🇲🇽",
-  "Canada": "🇨🇦",
-  "Japan": "🇯🇵",
+  Mexico: "🇲🇽",
+  Canada: "🇨🇦",
+  Japan: "🇯🇵",
   "South Korea": "🇰🇷",
-  "Australia": "🇦🇺",
-  "Senegal": "🇸🇳",
-  "Ghana": "🇬🇭",
-  "Nigeria": "🇳🇬",
-  "Cameroon": "🇨🇲",
-  "Ecuador": "🇪🇨",
-  "Uruguay": "🇺🇾",
-  "Colombia": "🇨🇴",
-  "Chile": "🇨🇱",
-  "Switzerland": "🇨🇭",
-  "Denmark": "🇩🇰",
-  "Poland": "🇵🇱",
-  "Serbia": "🇷🇸",
-  "Iran": "🇮🇷",
+  Australia: "🇦🇺",
+  Senegal: "🇸🇳",
+  Ghana: "🇬🇭",
+  Nigeria: "🇳🇬",
+  Cameroon: "🇨🇲",
+  Ecuador: "🇪🇨",
+  Uruguay: "🇺🇾",
+  Colombia: "🇨🇴",
+  Chile: "🇨🇱",
+  Switzerland: "🇨🇭",
+  Denmark: "🇩🇰",
+  Poland: "🇵🇱",
+  Serbia: "🇷🇸",
+  Iran: "🇮🇷",
   "Saudi Arabia": "🇸🇦",
-  "Qatar": "🇶🇦",
-  "Tunisia": "🇹🇳",
-  "Wales": "🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+  Qatar: "🇶🇦",
+  Tunisia: "🇹🇳",
+  Wales: "🏴󠁧󠁢󠁷󠁬󠁳󠁿",
   "New Zealand": "🇳🇿",
   "Costa Rica": "🇨🇷",
-  "Panama": "🇵🇦",
-  "Honduras": "🇭🇳",
-  "Jamaica": "🇯🇲",
+  Panama: "🇵🇦",
+  Honduras: "🇭🇳",
+  Jamaica: "🇯🇲",
   "Trinidad and Tobago": "🇹🇹",
-  "Algeria": "🇩🇿",
-  "Egypt": "🇪🇬",
+  Algeria: "🇩🇿",
+  Egypt: "🇪🇬",
   "Ivory Coast": "🇨🇮",
-  "Mali": "🇲🇱",
+  "Côte d'Ivoire": "🇨🇮",
+  Mali: "🇲🇱",
   "South Africa": "🇿🇦",
-  "Turkey": "🇹🇷",
-  "Ukraine": "🇺🇦",
-  "Scotland": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
-  "Austria": "🇦🇹",
-  "Slovakia": "🇸🇰",
-  "Slovenia": "🇸🇮",
-  "Greece": "🇬🇷",
-  "Romania": "🇷🇴",
-  "Hungary": "🇭🇺",
+  Turkey: "🇹🇷",
+  Ukraine: "🇺🇦",
+  Scotland: "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+  Austria: "🇦🇹",
+  Slovakia: "🇸🇰",
+  Slovenia: "🇸🇮",
+  Greece: "🇬🇷",
+  Romania: "🇷🇴",
+  Hungary: "🇭🇺",
   "Czech Republic": "🇨🇿",
-  "Bolivia": "🇧🇴",
-  "Paraguay": "🇵🇾",
-  "Venezuela": "🇻🇪",
-  "Peru": "🇵🇪",
-  "Cuba": "🇨🇺",
-  "Iraq": "🇮🇶",
-  "Indonesia": "🇮🇩",
-  "Thailand": "🇹🇭",
-  "Vietnam": "🇻🇳",
-  "China": "🇨🇳",
-  "India": "🇮🇳",
-  "Pakistan": "🇵🇰",
-  "Uzbekistan": "🇺🇿",
-  "Kazakhstan": "🇰🇿",
-  "Palestine": "🇵🇸",
-  "Jordan": "🇯🇴",
-  "UAE": "🇦🇪",
-  "Bahrain": "🇧🇭",
-  "Kuwait": "🇰🇼",
-  "Oman": "🇴🇲",
-  "Libya": "🇱🇾",
-  "Sudan": "🇸🇩",
-  "Ethiopia": "🇪🇹",
-  "Tanzania": "🇹🇿",
-  "Kenya": "🇰🇪",
-  "Uganda": "🇺🇬",
-  "Zimbabwe": "🇿🇼",
-  "Zambia": "🇿🇲",
-  "Angola": "🇦🇴",
-  "Congo": "🇨🇬",
-  "Rwanda": "🇷🇼",
-  "Mozambique": "🇲🇿",
+  Czechia: "🇨🇿",
+  Bolivia: "🇧🇴",
+  Paraguay: "🇵🇾",
+  Venezuela: "🇻🇪",
+  Peru: "🇵🇪",
+  Cuba: "🇨🇺",
+  Iraq: "🇮🇶",
+  Indonesia: "🇮🇩",
+  Thailand: "🇹🇭",
+  Vietnam: "🇻🇳",
+  China: "🇨🇳",
+  India: "🇮🇳",
+  Uzbekistan: "🇺🇿",
+  Kazakhstan: "🇰🇿",
+  Palestine: "🇵🇸",
+  Jordan: "🇯🇴",
+  UAE: "🇦🇪",
+  "United Arab Emirates": "🇦🇪",
+  Bahrain: "🇧🇭",
+  Kuwait: "🇰🇼",
+  Oman: "🇴🇲",
+  Libya: "🇱🇾",
+  Sudan: "🇸🇩",
+  Ethiopia: "🇪🇹",
+  Tanzania: "🇹🇿",
+  Kenya: "🇰🇪",
+  Uganda: "🇺🇬",
+  Zimbabwe: "🇿🇼",
+  Zambia: "🇿🇲",
+  Angola: "🇦🇴",
+  Congo: "🇨🇬",
+  Rwanda: "🇷🇼",
+  Mozambique: "🇲🇿",
+  "Cape Verde": "🇨🇻",
+  Benin: "🇧🇯",
+  Guinea: "🇬🇳",
+  Gabon: "🇬🇦",
+  Togo: "🇹🇬",
+  Burkina: "🇧🇫",
+  "Burkina Faso": "🇧🇫",
+  Venezuela: "🇻🇪",
+  Guatemala: "🇬🇹",
+  "El Salvador": "🇸🇻",
+  Nicaragua: "🇳🇮",
+  Haiti: "🇭🇹",
+  "Dominican Republic": "🇩🇴",
+  Curacao: "🇨🇼",
+  Suriname: "🇸🇷",
+  Guyana: "🇬🇾",
+  "New Caledonia": "🇳🇨",
+  Fiji: "🇫🇯",
+  "Papua New Guinea": "🇵🇬",
+  Tahiti: "🇵🇫",
+  "Solomon Islands": "🇸🇧",
+  Vanuatu: "🇻🇺",
+  Philippines: "🇵🇭",
+  Malaysia: "🇲🇾",
+  Singapore: "🇸🇬",
+  Myanmar: "🇲🇲",
+  Kyrgyzstan: "🇰🇬",
+  Tajikistan: "🇹🇯",
+  Azerbaijan: "🇦🇿",
+  Georgia: "🇬🇪",
+  Armenia: "🇦🇲",
+  Albania: "🇦🇱",
+  Kosovo: "🇽🇰",
+  "North Macedonia": "🇲🇰",
+  Moldova: "🇲🇩",
+  Belarus: "🇧🇾",
+  Lithuania: "🇱🇹",
+  Latvia: "🇱🇻",
+  Estonia: "🇪🇪",
+  Finland: "🇫🇮",
+  Norway: "🇳🇴",
+  Sweden: "🇸🇪",
+  Iceland: "🇮🇸",
+  Ireland: "🇮🇪",
+  "Northern Ireland": "🏴󠁧󠁢󠁮󠁩󠁲󠁿",
+  Luxembourg: "🇱🇺",
+  Malta: "🇲🇹",
+  Gibraltar: "🇬🇮",
+  Andorra: "🇦🇩",
+  Liechtenstein: "🇱🇮",
+  "San Marino": "🇸🇲",
+  "Faroe Islands": "🇫🇴",
+  Cyprus: "🇨🇾",
+  Israel: "🇮🇱",
+  Libya: "🇱🇾",
+  Lebanon: "🇱🇧",
+  Syria: "🇸🇾",
+  Yemen: "🇾🇪",
 };
 
 export function formatTeamName(name: string): string {
