@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const rawPort = process.env.PORT;
 
@@ -31,7 +30,7 @@ export default defineConfig({
   define: {
     // Secrets (no VITE_ prefix) must be explicitly injected
     "import.meta.env.VITE_GEMINI_API_KEY": JSON.stringify(process.env.GEMINI_API_KEY ?? ""),
-    // Regular VITE_ env vars — also injected via define to work in all Replit environments
+    // Regular VITE_ env vars — also injected via define so they work in all Replit environments
     "import.meta.env.VITE_GEMINI_API_KEY_2": JSON.stringify(process.env.VITE_GEMINI_API_KEY_2 ?? ""),
     "import.meta.env.VITE_MEMWAL_ACCOUNT_ID": JSON.stringify(process.env.VITE_MEMWAL_ACCOUNT_ID ?? ""),
     "import.meta.env.VITE_MEMWAL_SERVER_URL": JSON.stringify(process.env.VITE_MEMWAL_SERVER_URL ?? "https://relayer.memory.walrus.xyz"),
@@ -41,7 +40,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
+    // NOTE: runtimeErrorOverlay() intentionally removed — its injected script
+    // crashes in in-app browsers (Slush, Telegram, etc.) that run older WebViews.
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -73,6 +73,10 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    hmr: {
+      // Disable the built-in HMR error overlay — it also breaks in-app browsers
+      overlay: false,
+    },
     fs: {
       strict: true,
     },

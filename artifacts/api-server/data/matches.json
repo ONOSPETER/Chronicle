@@ -1,0 +1,323 @@
+{
+  "timestamp": "2026-06-19T08:06:00Z",
+  "total_matches": 35,
+  "matches": [
+    {
+      "status": "14:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group K",
+      "team1": "Portugal",
+      "score1": null,
+      "team2": "Uzbekistan",
+      "score2": null
+    },
+    {
+      "status": "16:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group D",
+      "team1": "United States",
+      "score1": null,
+      "team2": "Australia",
+      "score2": null
+    },
+    {
+      "status": "16:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group G",
+      "team1": "Belgium",
+      "score1": null,
+      "team2": "Iran",
+      "score2": null
+    },
+    {
+      "status": "17:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group L",
+      "team1": "England",
+      "score1": null,
+      "team2": "Ghana",
+      "score2": null
+    },
+    {
+      "status": "17:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group E",
+      "team1": "Germany",
+      "score1": null,
+      "team2": "Ivory Coast",
+      "score2": null
+    },
+    {
+      "status": "19:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group C",
+      "team1": "Scotland",
+      "score1": null,
+      "team2": "Morocco",
+      "score2": null
+    },
+    {
+      "status": "19:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group H",
+      "team1": "Uruguay",
+      "score1": null,
+      "team2": "Cape Verde",
+      "score2": null
+    },
+    {
+      "status": "20:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group L",
+      "team1": "Panama",
+      "score1": null,
+      "team2": "Croatia",
+      "score2": null
+    },
+    {
+      "status": "21:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group E",
+      "team1": "Ecuador",
+      "score1": null,
+      "team2": "Curacao",
+      "score2": null
+    },
+    {
+      "status": "22:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group G",
+      "team1": "New Zealand",
+      "score1": null,
+      "team2": "Egypt",
+      "score2": null
+    },
+    {
+      "status": "23:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group K",
+      "team1": "Colombia",
+      "score1": null,
+      "team2": "DR Congo",
+      "score2": null
+    },
+    {
+      "status": "00:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group D",
+      "team1": "Türkiye",
+      "score1": null,
+      "team2": "Paraguay",
+      "score2": null
+    },
+    {
+      "status": "00:30 UTC",
+      "match_state": "upcoming",
+      "group": "Group C",
+      "team1": "Brazil",
+      "score1": null,
+      "team2": "Haiti",
+      "score2": null
+    },
+    {
+      "status": "01:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group F",
+      "team1": "Tunisia",
+      "score1": null,
+      "team2": "Japan",
+      "score2": null
+    },
+    {
+      "status": "22:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group Stage",
+      "team1": "Uruguay",
+      "score1": null,
+      "team2": "Cabo Verde",
+      "score2": null
+    },
+    {
+      "status": "21:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group Stage",
+      "team1": "France",
+      "score1": null,
+      "team2": "Iraq",
+      "score2": null
+    },
+    {
+      "status": "22:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group Stage",
+      "team1": "Brazil",
+      "score1": null,
+      "team2": "Scotland",
+      "score2": null
+    },
+    {
+      "status": "20:00 UTC",
+      "match_state": "upcoming",
+      "group": "Group Stage",
+      "team1": "Curaçao",
+      "score1": null,
+      "team2": "Côte D'Ivoire",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group A",
+      "team1": "Mexico",
+      "score1": null,
+      "team2": "Republic of Korea",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group B",
+      "team1": "Qatar",
+      "score1": null,
+      "team2": "Canada",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group B",
+      "team1": "Switzerland",
+      "score1": null,
+      "team2": "Bosnia-Herzegovina",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group A",
+      "team1": "Czechia",
+      "score1": null,
+      "team2": "South Africa",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "England",
+      "score1": null,
+      "team2": "Croatia",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "France",
+      "score1": 3,
+      "team2": "Senegal",
+      "score2": 1
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "Iraq",
+      "score1": 1,
+      "team2": "Norway",
+      "score2": 4
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "Saudi Arabia",
+      "score1": 1,
+      "team2": "Uruguay",
+      "score2": 1
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "Sweden",
+      "score1": null,
+      "team2": "Tunisia",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "Côte D'Ivoire",
+      "score1": null,
+      "team2": "Ecuador",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "Haiti",
+      "score1": null,
+      "team2": "Scotland",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "USA",
+      "score1": null,
+      "team2": "Paraguay",
+      "score2": null
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "South Korea",
+      "score1": 2,
+      "team2": "Czechia",
+      "score2": 1
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group Stage",
+      "team1": "Mexico",
+      "score1": 2,
+      "team2": "South Africa",
+      "score2": 0
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group H",
+      "team1": "Spain",
+      "score1": 0,
+      "team2": "Cape Verde",
+      "score2": 0
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group J",
+      "team1": "Argentina",
+      "score1": 3,
+      "team2": "Algeria",
+      "score2": 0
+    },
+    {
+      "status": "FT",
+      "match_state": "finished",
+      "group": "Group J",
+      "team1": "Austria",
+      "score1": 3,
+      "team2": "Jordan",
+      "score2": 1
+    }
+  ],
+  "fetchedAt": 1781856447408,
+  "fetchedDate": "2026-06-19"
+}

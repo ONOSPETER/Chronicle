@@ -1,5 +1,6 @@
-import app from "./app";
-import { logger } from "./lib/logger";
+import app from "./app.js";
+import { logger } from "./lib/logger.js";
+import { initMatchCache } from "./lib/matchCache.js";
 
 const rawPort = process.env["PORT"];
 
@@ -14,6 +15,13 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+// Bootstrap match data before accepting traffic
+await initMatchCache({
+  info:  (m) => logger.info(m),
+  warn:  (m) => logger.warn(m),
+  error: (m) => logger.error(m),
+});
 
 app.listen(port, (err) => {
   if (err) {

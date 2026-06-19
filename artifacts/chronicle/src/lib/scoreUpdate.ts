@@ -1,8 +1,9 @@
-import { GoogleGenAI } from "@google/genai";
+// Match data is now fetched server-side.
+// The client simply reads from /api/matches (cached on the server, refreshed daily).
+// Local-storage is kept as a fast-path so repeat page-loads feel instant.
 
-const CACHE_KEY = "chronicle_worldcup_data";
-const DAILY_CHECK_KEY = "chronicle_daily_check";
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const LS_CACHE_KEY  = "chronicle_worldcup_data_v2";
+const LS_CACHE_TTL  = 60 * 60 * 1000; // 1 hour — server is authoritative; we just cache locally for speed
 
 export interface WorldCupMatch {
   status: string;
@@ -16,223 +17,105 @@ export interface WorldCupMatch {
 
 export interface WorldCupData {
   timestamp: string;
+  fetchedAt: number;
+  fetchedDate: string;
   total_matches: number;
   matches: WorldCupMatch[];
-  fetchedAt: number;
 }
 
-interface CachedData {
+interface LSCache {
   data: WorldCupData;
-  fetchedAt: number;
+  savedAt: number;
 }
 
-// ─── Key management ───────────────────────────────────────────────────────────
+// ─── Local-storage helpers ────────────────────────────────────────────────────
 
-const PRIMARY_KEY = import.meta.env.VITE_GEMINI_API_KEY as string;
-const BACKUP_KEY = import.meta.env.VITE_GEMINI_API_KEY_2 as string;
-
-function isRateLimitError(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return msg.includes("429") || msg.includes("quota") || msg.includes("rate limit") || msg.includes("resource_exhausted");
-}
-
-// ─── Daily-check helpers ──────────────────────────────────────────────────────
-
-function getTodayString(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-export function hasDailyCheck(): boolean {
+function lsLoad(): WorldCupData | null {
   try {
-    return localStorage.getItem(DAILY_CHECK_KEY) === getTodayString();
-  } catch {
-    return false;
-  }
-}
-
-export function getDailyCheckDate(): string | null {
-  try {
-    return localStorage.getItem(DAILY_CHECK_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function setDailyCheck(): void {
-  try {
-    localStorage.setItem(DAILY_CHECK_KEY, getTodayString());
-  } catch {
-    // ignore
-  }
-}
-
-// ─── Cache helpers ────────────────────────────────────────────────────────────
-
-function loadCached(): WorldCupData | null {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(LS_CACHE_KEY);
     if (!raw) return null;
-    const cached: CachedData = JSON.parse(raw);
-    // Use cache if less than 24 hours old
-    if (Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.data;
+    const cached: LSCache = JSON.parse(raw);
+    if (Date.now() - cached.savedAt < LS_CACHE_TTL) return cached.data;
     return null;
   } catch {
     return null;
   }
 }
 
-function saveCache(data: WorldCupData): void {
+function lsSave(data: WorldCupData): void {
   try {
-    const cached: CachedData = { data, fetchedAt: Date.now() };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
+    const cached: LSCache = { data, savedAt: Date.now() };
+    localStorage.setItem(LS_CACHE_KEY, JSON.stringify(cached));
   } catch {
-    // localStorage quota exceeded — ignore
+    // quota exceeded — ignore
   }
 }
 
-export function getCacheAge(): number | null {
+function lsAge(): number | null {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(LS_CACHE_KEY);
     if (!raw) return null;
-    const cached: CachedData = JSON.parse(raw);
-    return Date.now() - cached.fetchedAt;
+    const cached: LSCache = JSON.parse(raw);
+    return Date.now() - cached.savedAt;
   } catch {
     return null;
   }
 }
 
 export function clearCache(): void {
-  try {
-    localStorage.removeItem(CACHE_KEY);
-    localStorage.removeItem(DAILY_CHECK_KEY);
-  } catch {
-    // ignore
-  }
+  try { localStorage.removeItem(LS_CACHE_KEY); } catch { /* ignore */ }
 }
 
-// ─── Core Gemini fetch ────────────────────────────────────────────────────────
+export function getCacheAge(): number | null { return lsAge(); }
 
-async function fetchWithKey(apiKey: string, today: string): Promise<WorldCupData> {
-  const ai = new GoogleGenAI({ apiKey });
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: `Today's date is ${today}.
-
-Search Google for the FIFA World Cup 2026 match schedule and results.
-
-Return ONLY a valid raw JSON object with NO markdown fences:
-{
-  "timestamp": "${today}T<current UTC time>",
-  "total_matches": <integer>,
-  "matches": [
-    {
-      "status": "<'FT' | 'LIVE' | kickoff time string>",
-      "match_state": "<EXACTLY: finished | live | upcoming>",
-      "group": "<stage e.g. 'Group A' or 'Round of 16'>",
-      "team1": "<plain country name, no emoji>",
-      "score1": <integer or null if upcoming>,
-      "team2": "<plain country name, no emoji>",
-      "score2": <integer or null if upcoming>
-    }
-  ]
+// The server tracks the daily-check date — expose it from the cached payload
+export function getDailyCheckDate(): string | null {
+  const cached = lsLoad();
+  return cached?.fetchedDate ?? null;
 }
 
-Rules:
-- match_state MUST be exactly "finished", "live", or "upcoming" (lowercase)
-- score1/score2 MUST be null for upcoming matches
-- Include ALL matches: finished, live, and upcoming (next 7 days)
-- Sort: live first, then today's upcoming, then other upcoming, then finished (newest first)
-- No markdown, no code fences, raw JSON only`,
-    config: {
-      tools: [{ googleSearch: {} }],
-    },
-  });
-
-  const text = response.text;
-  if (!text) throw new Error("Empty response from Gemini");
-
-  const jsonText = text
-    .replace(/^```(?:json)?\s*/im, "")
-    .replace(/\s*```\s*$/im, "")
-    .trim();
-
-  const parsed: WorldCupData = JSON.parse(jsonText);
-  parsed.fetchedAt = Date.now();
-
-  // Normalise match_state values
-  parsed.matches = parsed.matches.map((m) => {
-    let state = m.match_state?.toLowerCase?.() as WorldCupMatch["match_state"];
-    if (!["finished", "live", "upcoming"].includes(state)) {
-      const s = (m.status ?? "").toUpperCase();
-      if (s === "FT" || s === "AET" || s === "PEN") state = "finished";
-      else if (s.includes("LIVE") || s.includes("'")) state = "live";
-      else state = "upcoming";
-    }
-    return { ...m, match_state: state };
-  });
-
-  parsed.total_matches = parsed.matches.length;
-  return parsed;
+export function hasDailyCheck(): boolean {
+  const d = getDailyCheckDate();
+  if (!d) return false;
+  return d === new Date().toISOString().split("T")[0];
 }
 
-// ─── Main fetch (24-hour cache + daily-check + backup key) ───────────────────
+// ─── Main fetch ───────────────────────────────────────────────────────────────
 
 /**
- * Returns World Cup data. Uses localStorage cache for 24 hours.
- * Only hits the Gemini API once per calendar day (or when cache is stale).
- * Pass forceRefresh=true to bypass cache and re-fetch immediately.
+ * Returns World Cup data from the API server.
+ * Uses localStorage as a 1-hour speed cache so repeat loads feel instant.
+ * Pass forceRefresh=true to bypass the local cache and hit the server.
  */
 export async function fetchWorldCupData(forceRefresh = false): Promise<WorldCupData | null> {
-  // ── Always serve from cache when possible ──
+  // Fast path: local cache within 1-hour TTL
   if (!forceRefresh) {
-    // Same calendar day AND fresh cache → serve immediately, no API call
-    if (hasDailyCheck()) {
-      const cached = loadCached();
-      if (cached) {
-        console.log("[Chronicle] Serving from daily cache.");
-        return cached;
-      }
-    }
-    // Cache still within 24-hour TTL (even if new day) → serve from cache
-    const cached = loadCached();
-    if (cached) {
-      console.log("[Chronicle] Serving from 24hr cache.");
-      return cached;
+    const local = lsLoad();
+    if (local) {
+      console.log("[Chronicle] Serving from local cache.");
+      return local;
     }
   }
 
-  const today = getTodayString();
-  const keys = [PRIMARY_KEY, BACKUP_KEY].filter(Boolean);
+  try {
+    const url = forceRefresh ? "/api/matches?refresh=true" : "/api/matches";
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
 
-  if (keys.length === 0) {
-    console.warn("[Chronicle] No Gemini API key configured — using fallback data.");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      throw new Error(body.error ?? `Server returned ${res.status}`);
+    }
+
+    const data: WorldCupData = await res.json();
+    lsSave(data);
+    return data;
+  } catch (err) {
+    console.error("[Chronicle] /api/matches fetch failed:", err instanceof Error ? err.message : err);
+    // Return stale local cache as last resort
+    const stale = lsLoad();
+    if (stale) return stale;
     return null;
   }
-
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-    try {
-      const data = await fetchWithKey(key, today);
-      saveCache(data);
-      setDailyCheck();
-      console.log(`[Chronicle] Fetched ${data.total_matches} matches (key ${i + 1}/${keys.length})`);
-      return data;
-    } catch (err) {
-      const isLast = i === keys.length - 1;
-      if (isRateLimitError(err) && !isLast) {
-        console.warn(`[Chronicle] Key ${i + 1} rate-limited — trying backup key`);
-        continue;
-      }
-      if (!isLast) {
-        console.warn(`[Chronicle] Key ${i + 1} failed — trying backup:`, err instanceof Error ? err.message : err);
-        continue;
-      }
-      console.error("[Chronicle] All API keys failed:", err instanceof Error ? err.message : err);
-    }
-  }
-
-  return null;
 }
 
 // ─── Country flag map ─────────────────────────────────────────────────────────
@@ -256,17 +139,16 @@ const FLAG_MAP: Record<string, string> = {
   Paraguay: "🇵🇾", Venezuela: "🇻🇪", Peru: "🇵🇪", Cuba: "🇨🇺",
   Iraq: "🇮🇶", Indonesia: "🇮🇩", Thailand: "🇹🇭", Vietnam: "🇻🇳",
   China: "🇨🇳", India: "🇮🇳", Uzbekistan: "🇺🇿", Kazakhstan: "🇰🇿",
-  Palestine: "🇵🇸", Jordan: "🇯🇴", UAE: "🇦🇪", "United Arab Emirates": "🇦🇪",
-  Bahrain: "🇧🇭", Kuwait: "🇰🇼", Oman: "🇴🇲", Libya: "🇱🇾",
-  Sudan: "🇸🇩", Ethiopia: "🇪🇹", Tanzania: "🇹🇿", Kenya: "🇰🇪",
+  "United Arab Emirates": "🇦🇪", UAE: "🇦🇪", Bahrain: "🇧🇭",
+  Kuwait: "🇰🇼", Oman: "🇴🇲", Jordan: "🇯🇴", Palestine: "🇵🇸",
+  Libya: "🇱🇾", Sudan: "🇸🇩", Ethiopia: "🇪🇹", Kenya: "🇰🇪",
   Uganda: "🇺🇬", Zimbabwe: "🇿🇼", Zambia: "🇿🇲", Angola: "🇦🇴",
   Congo: "🇨🇬", Rwanda: "🇷🇼", Mozambique: "🇲🇿", "Cape Verde": "🇨🇻",
   Benin: "🇧🇯", Guinea: "🇬🇳", Gabon: "🇬🇦", Togo: "🇹🇬",
   "Burkina Faso": "🇧🇫", Guatemala: "🇬🇹", "El Salvador": "🇸🇻",
   Nicaragua: "🇳🇮", Haiti: "🇭🇹", "Dominican Republic": "🇩🇴",
   Curacao: "🇨🇼", Suriname: "🇸🇷", Guyana: "🇬🇾",
-  "New Caledonia": "🇳🇨", Fiji: "🇫🇯", "Papua New Guinea": "🇵🇬",
-  Tahiti: "🇵🇫", "Solomon Islands": "🇸🇧", Vanuatu: "🇻🇺",
+  Fiji: "🇫🇯", "Papua New Guinea": "🇵🇬",
   Philippines: "🇵🇭", Malaysia: "🇲🇾", Singapore: "🇸🇬",
   Myanmar: "🇲🇲", Kyrgyzstan: "🇰🇬", Tajikistan: "🇹🇯",
   Azerbaijan: "🇦🇿", Georgia: "🇬🇪", Armenia: "🇦🇲",
@@ -275,9 +157,8 @@ const FLAG_MAP: Record<string, string> = {
   Latvia: "🇱🇻", Estonia: "🇪🇪", Finland: "🇫🇮",
   Norway: "🇳🇴", Sweden: "🇸🇪", Iceland: "🇮🇸",
   Ireland: "🇮🇪", Luxembourg: "🇱🇺", Malta: "🇲🇹",
-  Gibraltar: "🇬🇮", Andorra: "🇦🇩", Liechtenstein: "🇱🇮",
-  "San Marino": "🇸🇲", "Faroe Islands": "🇫🇴", Cyprus: "🇨🇾",
-  Israel: "🇮🇱", Lebanon: "🇱🇧", Syria: "🇸🇾", Yemen: "🇾🇪",
+  Cyprus: "🇨🇾", Israel: "🇮🇱", Lebanon: "🇱🇧",
+  Syria: "🇸🇾", Yemen: "🇾🇪",
 };
 
 export function formatTeamName(name: string): string {
