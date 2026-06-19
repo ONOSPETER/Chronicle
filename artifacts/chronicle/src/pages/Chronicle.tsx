@@ -12,7 +12,7 @@ import {
   Radio,
   CalendarCheck,
   Clock,
-  Database,
+  ExternalLink,
 } from "lucide-react";
 import {
   FALLBACK_ACTIVE_MATCHES,
@@ -27,8 +27,10 @@ import {
 import {
   storePrediction,
   truncateAddress,
+  truncateBlobId,
   truncateReason,
   type Prediction,
+  type StorageResult,
 } from "@/lib/walrus";
 import { generatePostMortem } from "@/lib/gemini";
 import {
@@ -41,7 +43,7 @@ import {
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 type DataStatus = "idle" | "loading" | "live" | "cached" | "fallback";
-type StorageMethod = "memwal" | "walrus" | "local" | null;
+type StorageMethod = "walrus" | "local" | null;
 
 interface MatchVoteState {
   selectedTeam: string | null;
@@ -49,6 +51,8 @@ interface MatchVoteState {
   submitting: boolean;
   submitted: boolean;
   storageMethod: StorageMethod;
+  blobId: string | null;
+  explorerUrl: string | null;
 }
 
 interface PastMatchAnalysis {
@@ -59,7 +63,7 @@ interface PastMatchAnalysis {
 }
 
 function defaultVote(): MatchVoteState {
-  return { selectedTeam: null, reason: "", submitting: false, submitted: false, storageMethod: null };
+  return { selectedTeam: null, reason: "", submitting: false, submitted: false, storageMethod: null, blobId: null, explorerUrl: null };
 }
 
 function formatAge(ms: number): string {
@@ -69,20 +73,39 @@ function formatAge(ms: number): string {
   return `${Math.floor(m / 60)}h ago`;
 }
 
-function StorageBadge({ method }: { method: StorageMethod }) {
+function StorageBadge({
+  method,
+  blobId,
+  explorerUrl,
+}: {
+  method: StorageMethod;
+  blobId: string | null;
+  explorerUrl: string | null;
+}) {
   if (!method) return null;
-  if (method === "memwal")
+
+  if (method === "walrus") {
+    const label = blobId ? `Walrus · ${truncateBlobId(blobId)}` : "Sealed on Walrus";
     return (
-      <span className="walrus-badge text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1">
-        <Database className="w-3 h-3" /> Sealed on Memwal
+      <span className="inline-flex items-center gap-1.5 flex-wrap mt-1">
+        <span className="walrus-badge text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+          <Globe className="w-3 h-3" /> {label}
+        </span>
+        {explorerUrl && (
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs inline-flex items-center gap-0.5 underline-offset-2 hover:underline"
+            style={{ color: "#6b7280" }}
+          >
+            View on-chain <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+        )}
       </span>
     );
-  if (method === "walrus")
-    return (
-      <span className="walrus-badge text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1">
-        <Globe className="w-3 h-3" /> Stored on Walrus
-      </span>
-    );
+  }
+
   return (
     <span className="local-badge text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1">
       <Zap className="w-3 h-3" /> Stored locally
@@ -181,29 +204,30 @@ export default function Chronicle() {
       timestamp: Date.now(),
     };
 
+    let result: StorageResult;
     try {
-      const { blobId, storedOnWalrus, storageMethod } = await storePrediction(prediction);
-      prediction.blobId = blobId;
-      prediction.storedOnWalrus = storedOnWalrus;
-      prediction.storageMethod = storageMethod as Prediction["storageMethod"];
-
-      setPredictions((p) => [...p, prediction]);
-      setVoteStates((p) => ({
-        ...p,
-        [matchId]: { ...p[matchId], submitting: false, submitted: true, storageMethod: storageMethod as StorageMethod },
-      }));
+      result = await storePrediction(prediction);
     } catch (err) {
       console.error("[Chronicle] Prediction storage error:", err);
-      // Still seal locally so the prediction is never lost
-      prediction.blobId = `local_${Date.now()}`;
-      prediction.storedOnWalrus = false;
-      prediction.storageMethod = "local";
-      setPredictions((p) => [...p, prediction]);
-      setVoteStates((p) => ({
-        ...p,
-        [matchId]: { ...p[matchId], submitting: false, submitted: true, storageMethod: "local" },
-      }));
+      result = { blobId: `local_${Date.now()}`, storedOnWalrus: false, storageMethod: "local", explorerUrl: null };
     }
+
+    prediction.blobId = result.blobId;
+    prediction.storedOnWalrus = result.storedOnWalrus;
+    prediction.storageMethod = result.storageMethod;
+
+    setPredictions((p) => [...p, prediction]);
+    setVoteStates((p) => ({
+      ...p,
+      [matchId]: {
+        ...p[matchId],
+        submitting: false,
+        submitted: true,
+        storageMethod: result.storageMethod,
+        blobId: result.blobId,
+        explorerUrl: result.explorerUrl,
+      },
+    }));
   }, [voteStates, walletAddress]);
 
   // ── AI analysis ───────────────────────────────────────────────────────────
@@ -418,7 +442,7 @@ export default function Chronicle() {
                           <div className="font-semibold text-xs" style={{ color: "#f0b429" }}>
                             Prediction sealed on Chronicle
                           </div>
-                          <StorageBadge method={vs.storageMethod} />
+                          <StorageBadge method={vs.storageMethod} blobId={vs.blobId} explorerUrl={vs.explorerUrl} />
                         </div>
                       </div>
                     ) : (
@@ -548,8 +572,8 @@ export default function Chronicle() {
                             style={{ background: "rgba(240,180,41,0.1)", color: "#f0b429" }}>
                             {pred.teamPicked.replace(/^\S+\s/, "")}
                           </span>
-                          {pred.storageMethod === "memwal" && (
-                            <span className="text-xs" style={{ color: "#10b981" }} title="Sealed on Memwal">⬡</span>
+                          {pred.storageMethod === "walrus" && (
+                            <span className="text-xs" style={{ color: "#10b981" }} title="Sealed on Walrus">⬡</span>
                           )}
                         </div>
                         <p className="text-sm mt-1" style={{ color: "#d1d5db", lineHeight: "1.5" }}>{pred.reason}</p>

@@ -230,6 +230,9 @@ importers:
       '@mysten/sui':
         specifier: ^2.18.0
         version: 2.18.0(typescript@5.9.3)
+      '@mysten/walrus':
+        specifier: ^1.2.1
+        version: 1.2.1(@mysten/sui@2.18.0(typescript@5.9.3))
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0
@@ -877,6 +880,14 @@ packages:
     resolution: {integrity: sha512-bR+buL3gTUzQZhYLu2onkYbvRS2OinMqhdjAsYsUAdu8irlZn8e5mF0GfFEjSSDly4upZCRvV1YP9vI6lxJUCQ==}
     peerDependencies:
       '@mysten/sui': ^2.18.0
+
+  '@mysten/walrus-wasm@0.3.0':
+    resolution: {integrity: sha512-uuTbK4woj+R4bQILLcSxBJCy1rIL3EDELnA7jjWbC3Q9bsQZFzwEKOPVtei4DKb3nT7zeALD/ky24MkeUZyDNQ==}
+
+  '@mysten/walrus@1.2.1':
+    resolution: {integrity: sha512-vLV2b5dNbnzcFFn0k4I9cDvqR+jQD+UfvFC8dhWfoNiNmJBrqJMDKnSbetK9Ptxk8JB43vRvQfaUmSFtDf3X8Q==}
+    peerDependencies:
+      '@mysten/sui': ^2.19.0
 
   '@mysten/window-wallet-core@0.2.0':
     resolution: {integrity: sha512-W5Pm3jWPK7tQ8kiqrD3lRRJIFUDNHW3CCGtu6kv0h+n+UPAcKTeqMEkBH9oXrqfa72+QxjMckZUvc0pYWbj3Rw==}
@@ -2411,6 +2422,9 @@ packages:
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
     engines: {node: '>= 12'}
+
+  dataloader@2.2.3:
+    resolution: {integrity: sha512-y2krtASINtPFS1rSDjacrFgn1dcUuoREVabwlOGOe4SdxenREqwjwjElAdwvbGM7kgZz9a3KVicWR7vcz8rnzA==}
 
   date-fns-jalali@4.1.0-0:
     resolution: {integrity: sha512-hTIP/z+t+qKwBDcmmsnmjWTduxCg+5KfdqWQvb2X/8C9+knYY6epN/pfxdDuyVlSVeFz0sM5eEfwIUQ70U4ckg==}
@@ -4101,6 +4115,16 @@ snapshots:
       '@mysten/sui': 2.18.0(typescript@5.9.3)
       '@wallet-standard/core': 1.1.2
 
+  '@mysten/walrus-wasm@0.3.0': {}
+
+  '@mysten/walrus@1.2.1(@mysten/sui@2.18.0(typescript@5.9.3))':
+    dependencies:
+      '@mysten/bcs': 2.1.0
+      '@mysten/sui': 2.18.0(typescript@5.9.3)
+      '@mysten/utils': 0.4.0
+      '@mysten/walrus-wasm': 0.3.0
+      dataloader: 2.2.3
+
   '@mysten/window-wallet-core@0.2.0(typescript@5.9.3)':
     dependencies:
       '@mysten/utils': 0.4.0
@@ -5742,6 +5766,8 @@ snapshots:
   d3-timer@3.0.1: {}
 
   data-uri-to-buffer@4.0.1: {}
+
+  dataloader@2.2.3: {}
 
   date-fns-jalali@4.1.0-0: {}
 
