@@ -181,16 +181,29 @@ export default function Chronicle() {
       timestamp: Date.now(),
     };
 
-    const { blobId, storedOnWalrus, storageMethod } = await storePrediction(prediction);
-    prediction.blobId = blobId;
-    prediction.storedOnWalrus = storedOnWalrus;
-    prediction.storageMethod = storageMethod as Prediction["storageMethod"];
+    try {
+      const { blobId, storedOnWalrus, storageMethod } = await storePrediction(prediction);
+      prediction.blobId = blobId;
+      prediction.storedOnWalrus = storedOnWalrus;
+      prediction.storageMethod = storageMethod as Prediction["storageMethod"];
 
-    setPredictions((p) => [...p, prediction]);
-    setVoteStates((p) => ({
-      ...p,
-      [matchId]: { ...p[matchId], submitting: false, submitted: true, storageMethod: storageMethod as StorageMethod },
-    }));
+      setPredictions((p) => [...p, prediction]);
+      setVoteStates((p) => ({
+        ...p,
+        [matchId]: { ...p[matchId], submitting: false, submitted: true, storageMethod: storageMethod as StorageMethod },
+      }));
+    } catch (err) {
+      console.error("[Chronicle] Prediction storage error:", err);
+      // Still seal locally so the prediction is never lost
+      prediction.blobId = `local_${Date.now()}`;
+      prediction.storedOnWalrus = false;
+      prediction.storageMethod = "local";
+      setPredictions((p) => [...p, prediction]);
+      setVoteStates((p) => ({
+        ...p,
+        [matchId]: { ...p[matchId], submitting: false, submitted: true, storageMethod: "local" },
+      }));
+    }
   }, [voteStates, walletAddress]);
 
   // ── AI analysis ───────────────────────────────────────────────────────────

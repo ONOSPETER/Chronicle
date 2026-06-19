@@ -29,7 +29,14 @@ if (!basePath) {
 export default defineConfig({
   base: basePath,
   define: {
+    // Secrets (no VITE_ prefix) must be explicitly injected
     "import.meta.env.VITE_GEMINI_API_KEY": JSON.stringify(process.env.GEMINI_API_KEY ?? ""),
+    // Regular VITE_ env vars — also injected via define to work in all Replit environments
+    "import.meta.env.VITE_GEMINI_API_KEY_2": JSON.stringify(process.env.VITE_GEMINI_API_KEY_2 ?? ""),
+    "import.meta.env.VITE_MEMWAL_ACCOUNT_ID": JSON.stringify(process.env.VITE_MEMWAL_ACCOUNT_ID ?? ""),
+    "import.meta.env.VITE_MEMWAL_SERVER_URL": JSON.stringify(process.env.VITE_MEMWAL_SERVER_URL ?? "https://relayer.memory.walrus.xyz"),
+    "import.meta.env.VITE_MEMWAL_PRIVATE_KEY": JSON.stringify(process.env.VITE_MEMWAL_PRIVATE_KEY ?? ""),
+    "import.meta.env.VITE_MEMWAL_PUBKEY": JSON.stringify(process.env.VITE_MEMWAL_PUBKEY ?? ""),
   },
   plugins: [
     react(),
