@@ -25,7 +25,7 @@ Built for the [DeepSurge Hackathon](https://www.deepsurge.xyz/hackathons/cbe3390
 
 ### Today's Predictions — pick your winner before kick-off
 
-![Chronicle main view — pick a team](screenshots/chronicle-main.jpg)
+![Chronicle main view — pick a team](./5oCNKcm.jpeg)
 
 *Connect your Sui wallet, select a team, and optionally add a reason. Your prediction is sealed on Walrus mainnet with a cryptographic signature.*
 
